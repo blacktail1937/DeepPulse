@@ -1,4 +1,4 @@
-"""Shared test fixtures for stock-agent test suite."""
+"""Shared test fixtures for DeepPulse test suite."""
 
 import numpy as np
 import pandas as pd
