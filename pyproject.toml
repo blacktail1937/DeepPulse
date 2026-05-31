@@ -80,6 +80,8 @@ allow_untyped_defs = true
 ignore_missing_imports = true
 warn_return_any = false
 warn_unused_configs = true
+warn_redundant_casts = true
+warn_unused_ignores = true
 
 # ── pytest ────────────────────────────────────────────────────────────
 [tool.pytest.ini_options]
