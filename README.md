@@ -145,9 +145,9 @@ cp setting.example.json setting.json
 
 | LLM | protocol | base_url |
 |-----|----------|----------|
-| DeepSeek | `openai` | `https://api.deepseek.com` |
-| OpenAI | `openai` | `https://api.openai.com/v1` |
-| Claude | `anthropic` | 无需填写 |
+| OpenAI协议 | `openai` | `https://api.openai.com/v1` |
+| Anthropic协议 | `anthropic` | 无需填写 |
+内置默认DeepSeek
 
 API Key 支持环境变量：`"${ENV_VAR_NAME}"`
 
