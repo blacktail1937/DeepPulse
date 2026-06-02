@@ -75,6 +75,12 @@ def main():
     conn = get_connection()
     init_tables(conn)
     codes = get_stock_list(conn)
+    if not codes:
+        log("stock_info 为空，自动采集股票列表...")
+        from src.collector import fetch_and_store_stock_list
+
+        fetch_and_store_stock_list()
+        codes = get_stock_list(conn)
     log(f"股票总数: {len(codes)}")
 
     source = create_source()
