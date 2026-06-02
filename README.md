@@ -547,3 +547,10 @@ DeepPulse/
 - 开发者不对因使用 DeepPulse 而产生的任何投资损失承担责任
 - DeepPulse 不提供任何形式的投资咨询、资产管理或金融服务
 - 使用 DeepPulse 即表示您已阅读、理解并同意本免责声明
+
+### 如果遇到技术问题或者有好的想法欢迎加入社区交流讨论。
+#### 微信
+
+<img width="1080" height="1596" alt="2654592b62e4dffac4130505b5769a12" src="https://github.com/user-attachments/assets/82cc8f44-74e7-4858-8a7e-8451888fac23" />
+
+
