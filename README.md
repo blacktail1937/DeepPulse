@@ -142,13 +142,14 @@ cp setting.example.json setting.json
 ```
 
 支持的 LLM：
+支持openai和anthropic两种主流api调用协议
 
 | LLM | protocol | base_url |
 |-----|----------|----------|
 | OpenAI协议 | `openai` | `https://api.openai.com/v1` |
-| Anthropic协议 | `anthropic` | 无需填写 |
+| Anthropic协议 | `anthropic` | `https://api.anthropic.com` |
 
-内置模型默认DeepSeek，完全可以自行修改。
+预设置模型默认DeepSeek，完全可以自行修改。
 
 API Key 支持环境变量：`"${ENV_VAR_NAME}"`
 
