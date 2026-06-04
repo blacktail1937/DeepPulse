@@ -172,6 +172,21 @@ python scripts/fetch_all.py
 python scripts/init_db.py          # 1. 初始化数据库表结构
 python scripts/fetch_stocks.py     # 2. 采集股票列表（约 1 分钟）
 python scripts/fetch_kline.py      # 3. 采集日 K 数据（约 30-60 分钟）
+
+# 如果Akshare限流，那么通用脚本指定 BaoStock
+
+  python scripts/fetch_kline.py --source baostock
+
+  也可以指定股票范围：
+
+  # 只采集特定股票
+  python scripts/fetch_kline.py --source baostock --codes 600519 000001
+
+  # 指定日期范围
+  python scripts/fetch_kline.py --source baostock --start 2024-01-01 --end 2026-06-04
+
+在初始数据更新完成后，通过与Agent交互式对话来更新数据也可以。在交易时间DeepPulse Agent会自动获取实时数据（免费数据源可能会有延时）。
+
 ```
 
 ### 第四步：启动 DeepPulse
