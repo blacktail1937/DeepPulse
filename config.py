@@ -44,3 +44,22 @@ MAX_TOOL_RESULT_CHARS = 8000
 # 实时行情配置
 REALTIME_SOURCES = ["sina", "eastmoney"]  # 按优先级排序
 REALTIME_TIMEOUT = 10.0  # 单源超时秒数
+
+# 重试策略配置
+RETRY_MAX_RETRIES = 3  # 最大重试次数（不含首次尝试）
+RETRY_BASE_DELAY = 1.0  # 基础延迟秒数
+RETRY_MAX_DELAY = 30.0  # 最大延迟秒数
+RETRY_BACKOFF_FACTOR = 2.0  # 退避因子
+
+# 熔断器配置
+CIRCUIT_FAILURE_THRESHOLD = 3  # 触发熔断的连续失败次数
+CIRCUIT_RECOVERY_TIMEOUT = 60  # 熔断恢复超时秒数
+CIRCUIT_HALF_OPEN_CALLS = 1  # 半开状态最大试探调用数
+
+# 数据采集韧性配置
+FETCH_RECONNECT_INTERVAL = 150  # 每处理N只股票主动重连一次
+FETCH_CONSECUTIVE_FAIL_THRESHOLD = 3  # 连续失败N次触发重连
+FETCH_TIMEOUT = 30  # 单只股票采集超时秒数
+
+# 数据验证配置
+DATA_VALIDATION_ENABLED = True  # 是否启用数据验证

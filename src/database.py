@@ -1,10 +1,14 @@
 """DuckDB 数据库连接管理与表操作"""
 
+import logging
+from contextlib import contextmanager
 from pathlib import Path
 
 import duckdb
 
 import config
+
+logger = logging.getLogger(__name__)
 
 
 def get_connection(db_path: Path = None) -> duckdb.DuckDBPyConnection:
@@ -14,8 +18,23 @@ def get_connection(db_path: Path = None) -> duckdb.DuckDBPyConnection:
     return duckdb.connect(str(path))
 
 
+@contextmanager
+def get_db_connection(db_path: Path = None):
+    """数据库连接上下文管理器，确保连接正确关闭
+
+    Usage:
+        with get_db_connection() as conn:
+            conn.execute(...)
+    """
+    conn = get_connection(db_path)
+    try:
+        yield conn
+    finally:
+        conn.close()
+
+
 def init_tables(conn: duckdb.DuckDBPyConnection) -> None:
-    """初始化所有表结构"""
+    """初始化所有表结构和索引"""
     conn.execute("""
         CREATE TABLE IF NOT EXISTS stock_info (
             code VARCHAR PRIMARY KEY,
@@ -58,9 +77,13 @@ def init_tables(conn: duckdb.DuckDBPyConnection) -> None:
         )
     """)
 
+    # 索引优化：加速常见查询
+    conn.execute("CREATE INDEX IF NOT EXISTS idx_kline_trade_date ON daily_kline(trade_date)")
+    conn.execute("CREATE INDEX IF NOT EXISTS idx_fetch_log_code_source ON fetch_log(code, data_source)")
+
 
 def upsert_stock_info(conn: duckdb.DuckDBPyConnection, records: list[dict]) -> int:
-    """批量写入/更新股票基本信息，返回写入行数"""
+    """批量写入/更新股票基本信息（事务保护），返回写入行数"""
     if not records:
         return 0
     import pandas as pd
@@ -72,12 +95,19 @@ def upsert_stock_info(conn: duckdb.DuckDBPyConnection, records: list[dict]) -> i
         if col not in df.columns:
             df[col] = None
     df = df[["code", "name", "market", "board", "list_date", "delist_date", "updated_at"]]
-    # 先删除已存在的，再插入
-    codes = df["code"].tolist()
-    if codes:
-        placeholders = ",".join(["?" for _ in codes])
-        conn.execute(f"DELETE FROM stock_info WHERE code IN ({placeholders})", codes)
-    conn.execute("INSERT INTO stock_info SELECT * FROM df")
+
+    # 事务保护：DELETE + INSERT 在同一事务中
+    conn.execute("BEGIN TRANSACTION")
+    try:
+        codes = df["code"].tolist()
+        if codes:
+            placeholders = ",".join(["?" for _ in codes])
+            conn.execute(f"DELETE FROM stock_info WHERE code IN ({placeholders})", codes)
+        conn.execute("INSERT INTO stock_info SELECT * FROM df")
+        conn.execute("COMMIT")
+    except Exception:
+        conn.execute("ROLLBACK")
+        raise
     return len(df)
 
 
@@ -97,7 +127,8 @@ def insert_daily_kline(conn: duckdb.DuckDBPyConnection, records: list[dict]) -> 
         conn.execute("INSERT OR IGNORE INTO daily_kline SELECT * FROM df")
         after = conn.execute("SELECT COUNT(*) FROM daily_kline").fetchone()[0]
         return after - before
-    except Exception:
+    except Exception as e:
+        logger.warning(f"批量插入失败，回退到逐行插入: {e}")
         # 回退：逐行插入，跳过重复
         inserted = 0
         for _, row in df.iterrows():

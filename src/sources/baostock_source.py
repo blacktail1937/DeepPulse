@@ -1,28 +1,78 @@
 """BaoStock 数据源实现"""
 
+import logging
 from datetime import date
 
 import baostock as bs
 import pandas as pd
 
+import config
+from src.resilience import RetryPolicy
+
 from .base import DataSourceBase
+
+logger = logging.getLogger(__name__)
 
 
 class BaoStockSource(DataSourceBase):
     def __init__(self):
         self._logged_in = False
+        self._retry_policy = RetryPolicy(
+            max_retries=config.RETRY_MAX_RETRIES,
+            base_delay=config.RETRY_BASE_DELAY,
+            max_delay=config.RETRY_MAX_DELAY,
+            backoff_factor=config.RETRY_BACKOFF_FACTOR,
+            retryable_errors=(RuntimeError, ConnectionError, ConnectionResetError, OSError),
+        )
 
     def _ensure_login(self):
-        if not self._logged_in:
-            login_result = bs.login()
-            if login_result.error_code != "0":
-                raise RuntimeError(f"BaoStock登录失败: {login_result.error_code} {login_result.error_msg}")
-            self._logged_in = True
+        """带健康检查的登录 — 连接断开时自动重连"""
+        if self._logged_in:
+            # 轻量级健康检查：查询交易日历
+            try:
+                rs = bs.query_trade_dates(start_date="2024-01-01", end_date="2024-01-02")
+                if rs.error_code != "0":
+                    raise RuntimeError("健康检查失败")
+                return  # 连接正常
+            except Exception:
+                logger.warning("[BaoStock] 连接已断开，尝试重新登录")
+                self._force_logout()
+
+        login_result = bs.login()
+        if login_result.error_code != "0":
+            raise RuntimeError(f"BaoStock登录失败: {login_result.error_code} {login_result.error_msg}")
+        self._logged_in = True
 
     def _logout(self):
+        """安全登出"""
         if self._logged_in:
-            bs.logout()
+            try:
+                bs.logout()
+            except Exception:
+                pass
             self._logged_in = False
+
+    def _force_logout(self):
+        """强制登出（忽略所有错误）"""
+        try:
+            bs.logout()
+        except Exception:
+            pass
+        self._logged_in = False
+
+    def cleanup(self):
+        """资源清理"""
+        self._logout()
+
+    def health_check(self) -> bool:
+        """连接健康检查"""
+        if not self._logged_in:
+            return False
+        try:
+            rs = bs.query_trade_dates(start_date="2024-01-01", end_date="2024-01-02")
+            return rs.error_code == "0"
+        except Exception:
+            return False
 
     @property
     def name(self) -> str:
@@ -37,7 +87,10 @@ class BaoStockSource(DataSourceBase):
             return f"sz.{code}"
 
     def fetch_stock_list(self) -> list[dict]:
-        """通过BaoStock获取沪深A股列表"""
+        """通过BaoStock获取沪深A股列表（带重试）"""
+        return self._retry_policy.execute(self._fetch_stock_list_impl)
+
+    def _fetch_stock_list_impl(self) -> list[dict]:
         self._ensure_login()
         rs = bs.query_stock_basic()
         if rs.error_code != "0":
@@ -80,7 +133,10 @@ class BaoStockSource(DataSourceBase):
         return results
 
     def fetch_daily_kline(self, code: str, start_date: date, end_date: date) -> pd.DataFrame:
-        """通过BaoStock获取日K线数据"""
+        """通过BaoStock获取日K线数据（带重试）"""
+        return self._retry_policy.execute(self._fetch_kline_impl, code, start_date, end_date)
+
+    def _fetch_kline_impl(self, code: str, start_date: date, end_date: date) -> pd.DataFrame:
         self._ensure_login()
         bs_code = self._to_bs_code(code)
         fields = "date,open,high,low,close,volume,amount,turn"

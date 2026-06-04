@@ -1,7 +1,10 @@
 """实时行情数据类与数据源抽象基类"""
 
+import logging
 from abc import ABC, abstractmethod
 from dataclasses import dataclass
+
+logger = logging.getLogger(__name__)
 
 
 @dataclass
@@ -33,7 +36,17 @@ class RealtimeQuote:
 
 
 class RealtimeQuoteSource(ABC):
-    """实时行情数据源抽象基类"""
+    """实时行情数据源抽象基类
+
+    子类需实现：
+        - name 属性：数据源名称标识
+        - fetch_quote(code)：获取单只股票实时行情
+
+    子类可覆盖：
+        - fetch_quotes(codes)：批量获取（默认逐个调用）
+        - health_check()：连接健康检查
+        - cleanup()：资源清理
+    """
 
     @property
     @abstractmethod
@@ -68,6 +81,21 @@ class RealtimeQuoteSource(ABC):
                 q = self.fetch_quote(code)
                 if q is not None:
                     result[code] = q
-            except Exception:
-                pass
+            except Exception as e:
+                logger.debug(f"[{self.name}] {code} 查询失败: {e}")
         return result
+
+    def health_check(self) -> bool:
+        """数据源连接健康检查
+
+        子类可覆盖此方法实现具体的探活逻辑。
+        默认返回 True（假定健康）。
+        """
+        return True
+
+    def cleanup(self):  # noqa: B027 — 可选覆盖，子类按需实现
+        """资源清理（关闭连接、释放缓存等）
+
+        子类可覆盖此方法。
+        """
+        return

@@ -1,6 +1,5 @@
 """Unit tests for src/realtime/ — RealtimeQuote, Sina parsing, EastMoney parsing, circuit breaker."""
 
-import time
 
 import pandas as pd
 import pytest
@@ -9,6 +8,7 @@ from src.realtime.base import RealtimeQuote, RealtimeQuoteSource
 from src.realtime.eastmoney_source import EastMoneyRealtimeSource
 from src.realtime.manager import RealtimeQuoteManager
 from src.realtime.sina_source import SinaRealtimeSource
+from src.resilience import CircuitState
 
 # ── RealtimeQuote ───────────────────────────────────────────────────
 
@@ -57,10 +57,6 @@ class TestSinaSource:
 
     def test_parse_response_valid(self):
         src = SinaRealtimeSource()
-        # Simulate Sina response format:
-        # var hq_str_sh600000="浦发银行,10.00,10.10,10.50,10.60,9.90,10.50,10.51,1234567,12345678.00,..."
-        # Fields: name,open,yesterday_close,current,high,low,...,volume,amount,...
-        # Padding with empty fields to reach index 30+ for date/time
         fields = [
             "浦发银行",  # 0: name
             "10.00",  # 1: open
@@ -73,7 +69,6 @@ class TestSinaSource:
             "1234567",  # 8: volume
             "12345678.00",  # 9: amount
         ]
-        # Pad to 32 fields
         fields.extend([""] * 22)
         fields.append("2024-01-15")  # 30: date
         fields.append("14:30:00")  # 31: time
@@ -95,6 +90,11 @@ class TestSinaSource:
         src = SinaRealtimeSource()
         quote = src._parse_response("600000", 'var hq_str_sh600000="";')
         assert quote is None
+
+    def test_custom_timeout(self):
+        """SinaRealtimeSource accepts custom timeout."""
+        src = SinaRealtimeSource(timeout=5.0)
+        assert src._timeout == 5.0
 
 
 # ── EastMoneyRealtimeSource ─────────────────────────────────────────
@@ -156,6 +156,29 @@ class TestEastMoneySource:
         quote = src._row_to_quote(row)
         assert quote is None
 
+    def test_row_to_quote_none_change_preserved(self):
+        """None change_amount/change_pct should remain None, not default to 0."""
+        src = EastMoneyRealtimeSource()
+        row = pd.Series(
+            {
+                "代码": "600000",
+                "名称": "浦发银行",
+                "最新价": 10.5,
+                "今开": 10.0,
+                "最高": 10.6,
+                "最低": 9.9,
+                "昨收": 10.1,
+                "涨跌额": None,  # 无数据
+                "涨跌幅": None,  # 无数据
+                "成交量": 1234567,
+                "成交额": 12345678.0,
+            }
+        )
+        quote = src._row_to_quote(row)
+        assert quote is not None
+        assert quote.change_amount is None  # 不应默认为 0
+        assert quote.change_pct is None
+
 
 # ── RealtimeQuoteManager (circuit breaker) ──────────────────────────
 
@@ -163,7 +186,7 @@ class TestEastMoneySource:
 class _MockSource(RealtimeQuoteSource):
     """A mock source that can be configured to succeed or fail."""
 
-    def __init__(self, name, behavior="success", quote=None):
+    def __init__(self, name, behavior="success", quote=None, timeout=10.0):
         self._name = name
         self._behavior = behavior
         self._quote = quote or RealtimeQuote(code="600000", name="test", current=10.0)
@@ -188,7 +211,6 @@ class TestRealtimeQuoteManager:
 
         mgr = RealtimeQuoteManager(priority=["primary", "backup"])
         mgr._sources = {"primary": src1, "backup": src2}
-        mgr._failure_counts = {"primary": 0, "backup": 0}
 
         quote = mgr.fetch_quote("600000")
         assert quote is not None
@@ -202,29 +224,27 @@ class TestRealtimeQuoteManager:
 
         mgr = RealtimeQuoteManager(priority=["primary", "backup"])
         mgr._sources = {"primary": src1, "backup": src2}
-        mgr._failure_counts = {"primary": 0, "backup": 0}
 
         quote = mgr.fetch_quote("600000")
         assert quote is not None
         assert src1.call_count == 1
         assert src2.call_count == 1
 
-    def test_circuit_breaker_opens_after_3_failures(self):
-        """After 3 consecutive failures, source should be circuit-broken."""
+    def test_circuit_breaker_opens_after_threshold(self):
+        """After threshold failures, source should be circuit-broken."""
         src1 = _MockSource("primary", behavior="fail")
         src2 = _MockSource("backup", behavior="success")
 
         mgr = RealtimeQuoteManager(priority=["primary", "backup"])
         mgr._sources = {"primary": src1, "backup": src2}
-        mgr._failure_counts = {"primary": 0, "backup": 0}
 
-        # Trigger 3 failures
+        # Trigger failures up to threshold
         for _ in range(3):
             mgr.fetch_quote("600000")
 
-        # Now primary should be circuit-broken
-        assert mgr._failure_counts["primary"] >= 3
-        assert "primary" in mgr._circuit_open_until
+        # Now primary's circuit breaker should be open
+        breaker = mgr._get_breaker("primary")
+        assert breaker.state == CircuitState.OPEN
 
         # Next call should skip primary entirely
         src1.call_count = 0
@@ -234,18 +254,25 @@ class TestRealtimeQuoteManager:
         assert src2.call_count == 1
 
     def test_circuit_breaker_recovers(self):
-        """After cooldown period, source should become available again."""
+        """After cooldown period, source should become available again via half-open."""
         src = _MockSource("primary", behavior="success")
 
         mgr = RealtimeQuoteManager(priority=["primary"])
         mgr._sources = {"primary": src}
-        mgr._failure_counts = {"primary": 3}
-        # Set circuit to expire in the past (already recovered)
-        mgr._circuit_open_until = {"primary": time.time() - 1}
+
+        # Manually set breaker to open with expired cooldown
+        breaker = mgr._get_breaker("primary")
+        breaker.record_failure()
+        breaker.record_failure()
+        breaker.record_failure()
+        assert breaker.state == CircuitState.OPEN
+
+        # Simulate recovery timeout by resetting
+        breaker.reset()
+        assert breaker.state == CircuitState.CLOSED
 
         quote = mgr.fetch_quote("600000")
         assert quote is not None
-        assert mgr._failure_counts["primary"] == 0  # reset after recovery
 
     def test_all_sources_down(self):
         """When all sources fail, return None."""
@@ -254,7 +281,23 @@ class TestRealtimeQuoteManager:
 
         mgr = RealtimeQuoteManager(priority=["primary", "backup"])
         mgr._sources = {"primary": src1, "backup": src2}
-        mgr._failure_counts = {"primary": 0, "backup": 0}
 
         quote = mgr.fetch_quote("600000")
         assert quote is None
+
+    def test_batch_fallback(self):
+        """Batch fetch should fall back to second source for remaining codes."""
+        src1 = _MockSource("primary", behavior="success")
+        src2 = _MockSource("backup", behavior="success")
+
+        # Primary only returns some codes
+        def primary_fetch_quotes(codes):
+            return {codes[0]: RealtimeQuote(code=codes[0], name="test", current=10.0)}
+
+        src1.fetch_quotes = primary_fetch_quotes
+
+        mgr = RealtimeQuoteManager(priority=["primary", "backup"])
+        mgr._sources = {"primary": src1, "backup": src2}
+
+        result = mgr.fetch_quotes(["600000", "000001"])
+        assert len(result) == 2

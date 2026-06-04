@@ -1,11 +1,30 @@
 """新浪财经实时行情数据源"""
 
+import logging
 from datetime import date
 
 from .base import RealtimeQuote, RealtimeQuoteSource
 
+logger = logging.getLogger(__name__)
+
 
 class SinaRealtimeSource(RealtimeQuoteSource):
+    def __init__(self, timeout: float = 10.0):
+        """
+        Args:
+            timeout: HTTP 请求超时秒数
+        """
+        self._timeout = timeout
+        self._session = None  # 复用 curl_cffi session
+
+    def _get_session(self):
+        """获取或创建复用的 HTTP session"""
+        if self._session is None:
+            from curl_cffi import requests as curl_requests
+
+            self._session = curl_requests.Session(impersonate="chrome")
+        return self._session
+
     @property
     def name(self) -> str:
         return "sina"
@@ -17,14 +36,13 @@ class SinaRealtimeSource(RealtimeQuoteSource):
 
     def fetch_quote(self, code: str) -> RealtimeQuote | None:
         """通过新浪接口获取单只股票实时行情"""
-        from curl_cffi import requests as curl_requests
-
         code = str(code).zfill(6)
         sina_code = self._to_sina_code(code)
         url = f"https://hq.sinajs.cn/list={sina_code}"
         headers = {"Referer": "https://finance.sina.com.cn"}
 
-        resp = curl_requests.get(url, headers=headers, impersonate="chrome", timeout=10)
+        session = self._get_session()
+        resp = session.get(url, headers=headers, timeout=self._timeout)
         resp.raise_for_status()
         text = resp.content.decode("gbk", errors="replace").strip()
 
@@ -35,8 +53,6 @@ class SinaRealtimeSource(RealtimeQuoteSource):
 
     def fetch_quotes(self, codes: list[str]) -> dict[str, RealtimeQuote]:
         """新浪支持批量查询，一次请求多只股票"""
-        from curl_cffi import requests as curl_requests
-
         if not codes:
             return {}
 
@@ -44,7 +60,8 @@ class SinaRealtimeSource(RealtimeQuoteSource):
         url = f"https://hq.sinajs.cn/list={','.join(sina_codes)}"
         headers = {"Referer": "https://finance.sina.com.cn"}
 
-        resp = curl_requests.get(url, headers=headers, impersonate="chrome", timeout=15)
+        session = self._get_session()
+        resp = session.get(url, headers=headers, timeout=self._timeout + 5)
         resp.raise_for_status()
         text = resp.content.decode("gbk", errors="replace").strip()
 
@@ -97,3 +114,12 @@ class SinaRealtimeSource(RealtimeQuoteSource):
             )
         except (IndexError, ValueError):
             return None
+
+    def cleanup(self):
+        """关闭 HTTP session"""
+        if self._session:
+            try:
+                self._session.close()
+            except Exception:
+                pass
+            self._session = None
