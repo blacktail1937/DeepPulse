@@ -165,13 +165,20 @@ def fetch_all_kline(
             logger.info(f"采集范围: {start} ~ {end}, 共 {len(codes)} 只股票")
 
             consecutive_failures = 0
+            last_reconnect_time = time.time()
+            RECONNECT_TIME_INTERVAL = 30  # 每30秒主动重连（BaoStock session约50秒超时）
 
             for i, code in enumerate(codes):
-                # 周期性重连：每 N 只股票主动重连一次（防止会话僵死）
-                if i > 0 and i % config.FETCH_RECONNECT_INTERVAL == 0:
-                    logger.info(f"--- 定期重连 {source.name} (第{i}只) ---")
+                # 周期性重连：按数量 或 按时间，先到先触发
+                time_since_reconnect = time.time() - last_reconnect_time
+                should_reconnect = (
+                    i > 0 and i % config.FETCH_RECONNECT_INTERVAL == 0
+                ) or time_since_reconnect > RECONNECT_TIME_INTERVAL
+                if should_reconnect:
+                    logger.info(f"--- 定期重连 {source.name} (第{i}只, 距上次重连{time_since_reconnect:.0f}秒) ---")
                     source.cleanup()
-                    time.sleep(2)
+                    time.sleep(1)
+                    last_reconnect_time = time.time()
 
                 try:
                     count = fetch_kline_for_stock(code, source, start, end, conn)

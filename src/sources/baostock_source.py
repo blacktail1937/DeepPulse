@@ -15,8 +15,12 @@ logger = logging.getLogger(__name__)
 
 
 class BaoStockSource(DataSourceBase):
+    # BaoStock session 约 50 秒超时，主动重连间隔设为 30 秒
+    SESSION_MAX_AGE = 30
+
     def __init__(self):
         self._logged_in = False
+        self._login_time = 0.0
         self._retry_policy = RetryPolicy(
             max_retries=config.RETRY_MAX_RETRIES,
             base_delay=config.RETRY_BASE_DELAY,
@@ -26,22 +30,22 @@ class BaoStockSource(DataSourceBase):
         )
 
     def _ensure_login(self):
-        """带健康检查的登录 — 连接断开时自动重连"""
+        """带超时预防的登录 — session 老化时主动重连，避免等到报错"""
+        import time
+
         if self._logged_in:
-            # 轻量级健康检查：查询交易日历
-            try:
-                rs = bs.query_trade_dates(start_date="2024-01-01", end_date="2024-01-02")
-                if rs.error_code != "0":
-                    raise RuntimeError("健康检查失败")
-                return  # 连接正常
-            except Exception:
-                logger.warning("[BaoStock] 连接已断开，尝试重新登录")
+            # 主动重连：session 超过最大存活时间，不等报错就刷新
+            if time.time() - self._login_time > self.SESSION_MAX_AGE:
+                logger.debug("[BaoStock] session 老化，主动重连")
                 self._force_logout()
+            else:
+                return  # session 还年轻，直接用
 
         login_result = bs.login()
         if login_result.error_code != "0":
             raise RuntimeError(f"BaoStock登录失败: {login_result.error_code} {login_result.error_msg}")
         self._logged_in = True
+        self._login_time = time.time()
 
     def _logout(self):
         """安全登出"""
@@ -51,6 +55,7 @@ class BaoStockSource(DataSourceBase):
             except Exception:
                 pass
             self._logged_in = False
+            self._login_time = 0.0
 
     def _force_logout(self):
         """强制登出（忽略所有错误）"""
@@ -59,6 +64,7 @@ class BaoStockSource(DataSourceBase):
         except Exception:
             pass
         self._logged_in = False
+        self._login_time = 0.0
 
     def cleanup(self):
         """资源清理"""
