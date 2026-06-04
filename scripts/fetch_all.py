@@ -38,8 +38,7 @@ def main():
     logger.info("全量日K采集启动")
     logger.info(f"日期范围: {config.START_DATE} ~ {config.END_DATE}")
     logger.info(
-        f"数据源: {config.DATA_SOURCES} | 超时: {config.FETCH_TIMEOUT}秒 | "
-        f"重连间隔: {config.FETCH_RECONNECT_INTERVAL}"
+        f"数据源: {config.DATA_SOURCES} | 超时: {config.FETCH_TIMEOUT}秒 | 重连间隔: {config.FETCH_RECONNECT_INTERVAL}"
     )
     logger.info("=" * 60)
 

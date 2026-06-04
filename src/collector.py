@@ -216,7 +216,5 @@ def fetch_all_kline(
             # 数据源采集完毕，清理资源
             source.cleanup()
 
-        logger.info(
-            f"\n采集完成: 成功{stats['success']}, 失败{stats['failed']}, 写入{stats['rows']}行"
-        )
+        logger.info(f"\n采集完成: 成功{stats['success']}, 失败{stats['failed']}, 写入{stats['rows']}行")
         return stats

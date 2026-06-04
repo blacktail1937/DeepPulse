@@ -1,6 +1,5 @@
 """Unit tests for src/realtime/ — RealtimeQuote, Sina parsing, EastMoney parsing, circuit breaker."""
 
-
 import pandas as pd
 import pytest
 

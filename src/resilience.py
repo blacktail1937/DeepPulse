@@ -69,14 +69,14 @@ class RetryPolicy:
                     time.sleep(delay)
                 else:
                     logger.error(
-                        f"[重试] {fn.__name__ if hasattr(fn, '__name__') else fn} "
-                        f"重试{self.max_retries}次后仍失败: {e}"
+                        f"[重试] {fn.__name__ if hasattr(fn, '__name__') else fn} 重试{self.max_retries}次后仍失败: {e}"
                     )
         raise last_err
 
 
 class CircuitState(Enum):
     """熔断器状态"""
+
     CLOSED = "closed"  # 正常状态，允许请求通过
     OPEN = "open"  # 熔断状态，拒绝所有请求
     HALF_OPEN = "half_open"  # 半开状态，允许少量试探请求
@@ -166,9 +166,7 @@ class CircuitBreaker:
                 self._failure_count += 1
                 if self._failure_count >= self.failure_threshold:
                     self._state = CircuitState.OPEN
-                    logger.warning(
-                        f"[熔断器] 连续失败{self._failure_count}次，熔断 {self.recovery_timeout}秒"
-                    )
+                    logger.warning(f"[熔断器] 连续失败{self._failure_count}次，熔断 {self.recovery_timeout}秒")
 
     def reset(self):
         """手动重置熔断器到正常状态"""
