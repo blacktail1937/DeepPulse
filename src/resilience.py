@@ -18,6 +18,7 @@ class RetryPolicy:
         max_delay: 最大延迟秒数
         backoff_factor: 退避因子（每次重试延迟乘以此值）
         retryable_errors: 可重试的异常类型元组
+        non_retryable_errors: 不可重试的异常类型（匹配时立即失败，不重试）
         jitter: 是否添加随机抖动，防止惊群
     """
 
@@ -28,6 +29,7 @@ class RetryPolicy:
         max_delay: float = 30.0,
         backoff_factor: float = 2.0,
         retryable_errors: tuple = (Exception,),
+        non_retryable_errors: tuple = (),
         jitter: bool = True,
     ):
         self.max_retries = max_retries
@@ -35,6 +37,7 @@ class RetryPolicy:
         self.max_delay = max_delay
         self.backoff_factor = backoff_factor
         self.retryable_errors = retryable_errors
+        self.non_retryable_errors = non_retryable_errors
         self.jitter = jitter
 
     def _calc_delay(self, attempt: int) -> float:
@@ -44,6 +47,23 @@ class RetryPolicy:
         if self.jitter:
             delay += random.uniform(0, delay * 0.3)
         return delay
+
+    def _is_non_retryable(self, error: Exception) -> bool:
+        """判断错误是否不可重试（连接被拒、协议错误等）"""
+        if self.non_retryable_errors and isinstance(error, self.non_retryable_errors):
+            return True
+        # 检查错误消息中的关键词
+        msg = str(error).lower()
+        non_retryable_keywords = [
+            "remote disconnected",
+            "connection refused",
+            "connection reset",
+            "connection aborted",
+            "name or service not known",
+            "nodename nor servname",
+            "getaddrinfo failed",
+        ]
+        return any(kw in msg for kw in non_retryable_keywords)
 
     def execute(self, fn, *args, **kwargs):
         """执行函数，失败时按策略重试
@@ -60,6 +80,10 @@ class RetryPolicy:
                 return fn(*args, **kwargs)
             except self.retryable_errors as e:
                 last_err = e
+                # 不可重试的错误立即失败
+                if self._is_non_retryable(e):
+                    logger.warning(f"[快速失败] {fn.__name__ if hasattr(fn, '__name__') else fn} 遇到不可重试错误: {e}")
+                    raise
                 if attempt < self.max_retries:
                     delay = self._calc_delay(attempt)
                     logger.warning(
