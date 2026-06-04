@@ -144,7 +144,7 @@ def main():
             log_fetch(conn, code, "baostock", actual_start, end_date, 0, "failed", str(e))
             log(f"  FAIL {code}: {e}")
             # socket 类错误立即重连
-            log(f"  连接异常，立即重连...")
+            log("  连接异常，立即重连...")
             try:
                 source._logout()
             except Exception:
