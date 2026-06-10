@@ -21,11 +21,30 @@ RESET = "\033[0m"
 BOLD = "\033[1m"
 
 
+def _check_esc() -> bool:
+    """检测 ESC 键是否被按下（仅 Windows）"""
+    try:
+        import msvcrt
+
+        return msvcrt.kbhit() and msvcrt.getch() == b"\x1b"
+    except ImportError:
+        return False
+
+
 def stream_chat(agent, user_input: str, show_thinking: bool = True, show_tools: bool = True):
-    """流式输出 Agent 对话"""
+    """流式输出 Agent 对话，支持 ESC 中断"""
     in_thinking = False
 
     for chunk_type, text in agent.chat_stream(user_input):
+        # ESC 中断检测
+        if _check_esc():
+            agent.stop()
+            agent.rollback()
+            if in_thinking:
+                print(f"{RESET}", flush=True)
+            print(f"{TOOL_COLOR}[已中断]{RESET}")
+            break
+
         if chunk_type == "round":
             if show_tools:
                 print(f"\n{ROUND_COLOR}[Round {text}]{RESET}", flush=True)

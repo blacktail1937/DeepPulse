@@ -21,6 +21,10 @@ class StockAgent:
         self.verbose = verbose if verbose is not None else self.setting["agent"]["verbose"]
         self.max_rounds = self.setting["agent"]["max_rounds"]
 
+        # 中断控制
+        self._stopped = False
+        self._rollback_point = 0
+
         # 记忆系统
         self.session_id = session_id or str(uuid.uuid4())
         self.memory = MemoryManager(setting=self.setting)
@@ -64,15 +68,37 @@ class StockAgent:
 
         return "分析轮次已达上限，请简化问题后重试。"
 
+    def stop(self):
+        """中断当前对话"""
+        self._stopped = True
+
+    def rollback(self):
+        """回滚到本次对话前的消息状态"""
+        if self._rollback_point:
+            self.messages = self.messages[:self._rollback_point]
+
+    def _check_stopped(self):
+        """检查是否被中断，是则 yield done 并返回 True"""
+        if self._stopped:
+            yield ("done", "已中断")
+            return True
+        return False
+
     def chat_stream(self, user_input: str):
         """流式处理用户输入，yield (type, text) 元组。
 
         type: "thinking" / "content" / "tool_start" / "tool_result" / "round" / "done"
         """
         self._track_session_info(user_input)
+        self._rollback_point = len(self.messages)
+        self._stopped = False
         self.messages.append({"role": "user", "content": user_input})
 
         for round_num in range(self.max_rounds):
+            if self._stopped:
+                yield ("done", "已中断")
+                return
+
             yield ("round", round_num + 1)
 
             if self.verbose:
@@ -80,6 +106,9 @@ class StockAgent:
 
             # 流式调用，逐 chunk yield
             for chunk in self.client.chat_stream(self.messages, tools=TOOL_DEFINITIONS):
+                if self._stopped:
+                    yield ("done", "已中断")
+                    return
                 if chunk.type == "thinking":
                     yield ("thinking", chunk.text)
                 elif chunk.type == "content":
@@ -96,6 +125,10 @@ class StockAgent:
 
             # 执行工具
             for tc in response["tool_calls"]:
+                if self._stopped:
+                    yield ("done", "已中断")
+                    return
+
                 args_str = json.dumps(tc["arguments"], ensure_ascii=False)
                 yield ("tool_start", f"{tc['name']}({args_str})")
 
