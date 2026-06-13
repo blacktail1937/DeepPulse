@@ -1,10 +1,15 @@
 """短线战法加载器 - 从 strategies/ 目录加载 Markdown 战法文件，支持关键词检索"""
 
+import json
 import re
+import time
 from pathlib import Path
 
 # 战法目录
 STRATEGIES_DIR = Path(__file__).parent / "strategies"
+# 缓存文件
+CACHE_DIR = Path(__file__).parent.parent / ".cache"
+CACHE_FILE = CACHE_DIR / "strategy_summary.json"
 
 
 class StrategyLoader:
@@ -223,10 +228,16 @@ class StrategyLoader:
         ]
 
     def get_all_content_summary(self, max_chars: int = 3000) -> str:
-        """获取所有战法的摘要，用于注入 system prompt"""
+        """获取所有战法的摘要，用于注入 system prompt（支持缓存）"""
         if not self.strategies:
             return ""
 
+        # 检查缓存
+        cached_summary = self._load_summary_cache(max_chars)
+        if cached_summary:
+            return cached_summary
+
+        # 生成摘要
         lines = []
         total = 0
         for s in self.strategies:
@@ -238,7 +249,56 @@ class StrategyLoader:
             lines.append(line)
             total += len(line) + 1
 
-        return "\n".join(lines)
+        summary = "\n".join(lines)
+
+        # 保存缓存
+        self._save_summary_cache(summary, max_chars)
+
+        return summary
+
+    def _load_summary_cache(self, max_chars: int) -> str:
+        """加载缓存的摘要"""
+        try:
+            if not CACHE_FILE.exists():
+                return ""
+
+            # 检查缓存是否过期
+            cache_mtime = CACHE_FILE.stat().st_mtime
+            if self.dir.exists():
+                strategy_files = list(self.dir.glob("*.md"))
+                if strategy_files:
+                    latest_strategy_mtime = max(f.stat().st_mtime for f in strategy_files)
+                    if cache_mtime < latest_strategy_mtime:
+                        # 缓存过期
+                        return ""
+
+            # 读取缓存
+            with open(CACHE_FILE, encoding="utf-8") as f:
+                cache_data = json.load(f)
+
+            # 检查max_chars是否匹配
+            if cache_data.get("max_chars") == max_chars:
+                return cache_data.get("summary", "")
+
+        except Exception:
+            pass
+
+        return ""
+
+    def _save_summary_cache(self, summary: str, max_chars: int):
+        """保存摘要到缓存"""
+        try:
+            CACHE_DIR.mkdir(parents=True, exist_ok=True)
+            cache_data = {
+                "summary": summary,
+                "max_chars": max_chars,
+                "generated_at": time.time(),
+                "strategy_count": len(self.strategies)
+            }
+            with open(CACHE_FILE, "w", encoding="utf-8") as f:
+                json.dump(cache_data, f, ensure_ascii=False, indent=2)
+        except Exception:
+            pass
 
 
 # 全局实例（惰性加载）

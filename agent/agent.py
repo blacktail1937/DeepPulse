@@ -1,5 +1,6 @@
 """Agent 核心 - ReAct 循环、工具调度、流式输出、记忆系统、战法库"""
 
+import asyncio
 import json
 import re
 import uuid
@@ -107,6 +108,56 @@ class StockAgent:
             self._append_pending_system_notes()
 
         yield ("done", "")
+
+    async def chat_stream_async(self, user_input: str):
+        """异步流式处理用户输入，yield (type, text) 元组。
+
+        type: "thinking" / "content" / "tool_start" / "tool_result" / "round" / "done"
+        """
+        self._track_session_info(user_input)
+        self.messages.append({"role": "user", "content": user_input})
+
+        for round_num in range(self.max_rounds):
+            yield ("round", round_num + 1)
+
+            if self.verbose:
+                print(f"\n[Round {round_num + 1}] 调用 LLM...")
+
+            # 异步流式调用，逐 chunk yield
+            async for chunk in self.client.chat_stream_async(self.messages, tools=TOOL_DEFINITIONS):
+                if chunk.type == "thinking":
+                    yield ("thinking", chunk.text)
+                elif chunk.type == "content":
+                    yield ("content", chunk.text)
+
+            # 流式完成后从 client 获取完整结构化结果
+            response = self.client.last_stream_response
+
+            self.messages.append(self.client.format_assistant_message(response))
+
+            if response["stop_reason"] == "stop" or not response["tool_calls"]:
+                yield ("done", "")
+                return
+
+            # 执行工具（异步）
+            for tc in response["tool_calls"]:
+                args_str = json.dumps(tc["arguments"], ensure_ascii=False)
+                yield ("tool_start", f"{tc['name']}({args_str})")
+
+                result = await self._run_tool_async(tc["name"], tc["arguments"])
+                yield ("tool_result", result[:300] if len(result) > 300 else result)
+
+                self.messages.append(self.client.format_tool_result_message(tc["id"], tc["name"], result))
+
+            self._append_pending_system_notes()
+
+        yield ("done", "")
+
+    async def _run_tool_async(self, tool_name: str, tool_args: dict) -> str:
+        """异步执行单个工具"""
+        # 在线程池中执行同步工具函数
+        loop = asyncio.get_event_loop()
+        return await loop.run_in_executor(None, self._run_tool, tool_name, tool_args)
 
     def _drain_stream(self, gen, yield_fn):
         """消费流式生成器，返回最终结果"""

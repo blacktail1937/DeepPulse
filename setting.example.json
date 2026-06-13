@@ -2,7 +2,7 @@
   "llm": {
     "provider": "deepseek",
     "base_url": "https://api.deepseek.com",
-    "api_key": "YOUR_API_KEY_HERE",
+    "api_key": "sk-your-api-key-here",
     "model": "deepseek-v4-pro",
     "protocol": "openai",
     "max_tokens": 16384,

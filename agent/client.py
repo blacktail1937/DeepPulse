@@ -1,5 +1,6 @@
-"""统一 LLM 客户端 - 支持 OpenAI 和 Anthropic 两种协议，支持流式输出"""
+"""统一 LLM 客户端 - 支持 OpenAI 和 Anthropic 两种协议，支持流式输出和异步"""
 
+import asyncio
 import json
 import os
 from dataclasses import dataclass, field
@@ -16,7 +17,14 @@ def load_setting() -> dict:
     llm = setting["llm"]
     key_val = llm["api_key"]
     if key_val.startswith("${") and key_val.endswith("}"):
-        inner = key_val[2:-1]
+        inner = key_val[2:-1].strip()
+        # 如果内容为空，提示用户配置
+        if not inner:
+            raise ValueError(
+                "API Key 未配置。请编辑 setting.json:\n"
+                "  1. 直接填入 API Key: \"api_key\": \"sk-your-key\"\n"
+                "  2. 或引用环境变量: \"api_key\": \"${YOUR_ENV_VAR}\""
+            )
         # 先尝试作为环境变量名查找
         env_val = os.environ.get(inner)
         if env_val:
@@ -25,7 +33,11 @@ def load_setting() -> dict:
             # 内容本身是 API key，直接使用
             llm["api_key"] = inner
         else:
-            raise ValueError(f"环境变量 {inner} 未设置，请设置后重试")
+            raise ValueError(
+                f"环境变量 {inner} 未设置。请:\n"
+                f"  1. 设置环境变量: set {inner}=your-key (Windows) 或 export {inner}=your-key (Linux/Mac)\n"
+                f"  2. 或直接在 setting.json 中填入 API Key: \"api_key\": \"sk-your-key\""
+            )
 
     return setting
 
@@ -52,16 +64,21 @@ class LLMClient:
 
     def _init_client(self):
         if self.protocol == "openai":
-            from openai import OpenAI
+            from openai import AsyncOpenAI, OpenAI
 
             self.client = OpenAI(
                 api_key=self.llm_config["api_key"],
                 base_url=self.llm_config["base_url"],
             )
+            self.async_client = AsyncOpenAI(
+                api_key=self.llm_config["api_key"],
+                base_url=self.llm_config["base_url"],
+            )
         elif self.protocol == "anthropic":
-            from anthropic import Anthropic
+            from anthropic import Anthropic, AsyncAnthropic
 
             self.client = Anthropic(api_key=self.llm_config["api_key"])
+            self.async_client = AsyncAnthropic(api_key=self.llm_config["api_key"])
         else:
             raise ValueError(f"不支持的协议: {self.protocol}")
 
@@ -96,6 +113,20 @@ class LLMClient:
             except StopIteration as e:
                 self.last_stream_response = e.value
                 break
+
+    async def chat_stream_async(self, messages: list, tools: list = None):
+        """异步流式对话，yield StreamChunk。完成后 self.last_stream_response 包含完整结果。"""
+        self.last_stream_response = None
+        if self.protocol == "openai":
+            async for chunk in self._stream_openai_async(messages, tools):
+                if chunk.type == "done":
+                    break
+                yield chunk
+        else:
+            async for chunk in self._stream_anthropic_async(messages, tools):
+                if chunk.type == "done":
+                    break
+                yield chunk
 
     def _chat_openai(self, messages, tools) -> dict:
         kwargs = {
@@ -266,6 +297,167 @@ class LLMClient:
 
         yield StreamChunk(type="done")
         return result
+
+    async def _stream_openai_async(self, messages, tools):
+        """OpenAI 协议异步流式输出，支持 DeepSeek thinking 模型"""
+        kwargs = {
+            "model": self.llm_config["model"],
+            "messages": messages,
+            "max_tokens": self.llm_config["max_tokens"],
+            "temperature": self.llm_config["temperature"],
+            "stream": True,
+        }
+        if tools:
+            kwargs["tools"] = tools
+            kwargs["tool_choice"] = "auto"
+
+        stream = await self.async_client.chat.completions.create(**kwargs)
+
+        # 累积状态
+        reasoning_buf = ""
+        content_buf = ""
+        tool_calls_buf = {}  # index -> {id, name, arguments}
+
+        async for chunk in stream:
+            if not chunk.choices:
+                continue
+            delta = chunk.choices[0].delta
+            finish = chunk.choices[0].finish_reason
+
+            # DeepSeek thinking: reasoning_content 字段
+            rc = getattr(delta, "reasoning_content", None)
+            if rc:
+                reasoning_buf += rc
+                yield StreamChunk(type="thinking", text=rc)
+
+            # 正文内容
+            if delta.content:
+                content_buf += delta.content
+                yield StreamChunk(type="content", text=delta.content)
+
+            # 工具调用（流式累积）
+            if delta.tool_calls:
+                for tc in delta.tool_calls:
+                    idx = tc.index
+                    if idx not in tool_calls_buf:
+                        tool_calls_buf[idx] = {
+                            "id": tc.id or "",
+                            "name": tc.function.name if tc.function and tc.function.name else "",
+                            "arguments": "",
+                        }
+                    else:
+                        if tc.id:
+                            tool_calls_buf[idx]["id"] = tc.id
+                        if tc.function and tc.function.name:
+                            tool_calls_buf[idx]["name"] = tc.function.name
+                    if tc.function and tc.function.arguments:
+                        tool_calls_buf[idx]["arguments"] += tc.function.arguments
+
+            # 流结束
+            if finish == "stop":
+                break
+            if finish == "tool_calls":
+                break
+
+        # 构造最终结果
+        result = {
+            "content": content_buf,
+            "tool_calls": None,
+            "stop_reason": "stop",
+            "reasoning_content": reasoning_buf or None,
+        }
+
+        if tool_calls_buf:
+            result["tool_calls"] = []
+            result["stop_reason"] = "tool_calls"
+            for idx in sorted(tool_calls_buf.keys()):
+                tc = tool_calls_buf[idx]
+                try:
+                    args = json.loads(tc["arguments"])
+                except json.JSONDecodeError:
+                    args = {}
+                result["tool_calls"].append(
+                    {
+                        "id": tc["id"],
+                        "name": tc["name"],
+                        "arguments": args,
+                    }
+                )
+
+        self.last_stream_response = result
+        yield StreamChunk(type="done")
+
+    async def _stream_anthropic_async(self, messages, tools):
+        """Anthropic 协议异步流式输出"""
+        system_msg = ""
+        api_messages = []
+        for m in messages:
+            if m["role"] == "system":
+                system_msg = m["content"]
+            else:
+                api_messages.append(m)
+
+        kwargs = {
+            "model": self.llm_config["model"],
+            "messages": api_messages,
+            "max_tokens": self.llm_config["max_tokens"],
+            "temperature": self.llm_config["temperature"],
+        }
+        if system_msg:
+            kwargs["system"] = system_msg
+        if tools:
+            kwargs["tools"] = self._convert_tools_to_anthropic(tools)
+
+        content_buf = ""
+        tool_calls_buf = []
+        current_tool = None
+
+        async with self.async_client.messages.stream(**kwargs) as stream:
+            async for event in stream:
+                if event.type == "content_block_start":
+                    if event.content_block.type == "tool_use":
+                        current_tool = {
+                            "id": event.content_block.id,
+                            "name": event.content_block.name,
+                            "arguments": "",
+                        }
+                elif event.type == "content_block_delta":
+                    if event.delta.type == "thinking_delta":
+                        yield StreamChunk(type="thinking", text=event.delta.thinking)
+                    elif event.delta.type == "text_delta":
+                        content_buf += event.delta.text
+                        yield StreamChunk(type="content", text=event.delta.text)
+                    elif event.delta.type == "input_json_delta":
+                        if current_tool:
+                            current_tool["arguments"] += event.delta.partial_json
+                elif event.type == "content_block_stop":
+                    if current_tool:
+                        tool_calls_buf.append(current_tool)
+                        current_tool = None
+
+        result = {
+            "content": content_buf,
+            "tool_calls": None,
+            "stop_reason": "stop",
+        }
+        if tool_calls_buf:
+            result["tool_calls"] = []
+            result["stop_reason"] = "tool_calls"
+            for tc in tool_calls_buf:
+                try:
+                    args = json.loads(tc["arguments"])
+                except json.JSONDecodeError:
+                    args = {}
+                result["tool_calls"].append(
+                    {
+                        "id": tc["id"],
+                        "name": tc["name"],
+                        "arguments": args,
+                    }
+                )
+
+        self.last_stream_response = result
+        yield StreamChunk(type="done")
 
     def _stream_anthropic(self, messages, tools):
         """Anthropic 协议流式输出"""

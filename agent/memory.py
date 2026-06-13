@@ -27,7 +27,7 @@ DEFAULT_HALF_LIFE = {
 
 
 class EmbeddingIndex:
-    """Embedding 向量索引，支持本地模型和 API 两种方式"""
+    """Embedding 向量索引，支持本地模型和 API 两种方式（懒加载）"""
 
     def __init__(self, setting: dict = None):
         self._model = None
@@ -36,7 +36,14 @@ class EmbeddingIndex:
         self._provider = "none"
         self._ready = False
         self._setting = setting
-        self._init_provider()
+        self._initialized = False
+        # 不立即初始化，延迟到首次使用
+
+    def _ensure_initialized(self):
+        """确保已初始化（延迟加载）"""
+        if not self._initialized:
+            self._init_provider()
+            self._initialized = True
 
     def _init_provider(self):
         """初始化 embedding 提供者"""
@@ -90,7 +97,10 @@ class EmbeddingIndex:
         return self._ready
 
     def encode(self, texts: list[str]) -> list[list[float]]:
-        """批量生成 embedding 向量"""
+        """批量生成 embedding 向量（懒加载）"""
+        # 延迟初始化
+        self._ensure_initialized()
+
         if not self._ready:
             return [[] for _ in texts]
 
@@ -108,7 +118,10 @@ class EmbeddingIndex:
         return [[] for _ in texts]
 
     def encode_single(self, text: str) -> list[float]:
-        """生成单条文本的 embedding"""
+        """生成单条文本的 embedding（懒加载）"""
+        # 延迟初始化
+        self._ensure_initialized()
+
         result = self.encode([text])
         return result[0] if result else []
 
