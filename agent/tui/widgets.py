@@ -1,7 +1,6 @@
 """TUI界面核心组件"""
 
 import time
-from datetime import datetime
 
 from rich.markdown import Markdown
 from rich.panel import Panel
@@ -124,7 +123,7 @@ class AgentMessageContainer(Static):
         self.update(Panel(content, title=title, border_style="green" if self.complete else "yellow", padding=(0, 1)))
 
         # 触发父容器滚动
-        if hasattr(self.parent, 'scroll_end'):
+        if hasattr(self.parent, "scroll_end"):
             self.parent.scroll_end(animate=False)
 
 
@@ -277,7 +276,7 @@ class WatchlistPanel(Static):
                     else:
                         style = "white"
                         symbol = "○"
-                except:
+                except Exception:
                     style = "white"
                     symbol = "○"
 

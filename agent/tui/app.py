@@ -5,7 +5,7 @@ import json
 
 from textual.app import App, ComposeResult
 from textual.binding import Binding
-from textual.containers import Container, Horizontal, Vertical
+from textual.containers import Horizontal, Vertical
 from textual.widgets import Footer, Header, Input
 
 from agent.agent import StockAgent
@@ -63,10 +63,7 @@ class DeepPulseTUI(App):
         self.data_panel = self.query_one(DataPanel)
 
         # 显示欢迎消息
-        self.chat_log.add_system_message(
-            "✨ 欢迎使用 DeepPulse v0.2.0！\n"
-            "⏳ 正在后台初始化 Agent，请稍候..."
-        )
+        self.chat_log.add_system_message("✨ 欢迎使用 DeepPulse v0.2.0！\n⏳ 正在后台初始化 Agent，请稍候...")
 
         # 聚焦输入框
         self.chat_input.focus()
@@ -82,15 +79,11 @@ class DeepPulseTUI(App):
 
             # 初始化主Agent
             self.agent = await loop.run_in_executor(
-                None,
-                lambda: StockAgent(setting=self.setting, verbose=self.verbose)
+                None, lambda: StockAgent(setting=self.setting, verbose=self.verbose)
             )
 
             # 初始化评判Agent
-            self.judge_agent = await loop.run_in_executor(
-                None,
-                lambda: JudgeAgent(setting=self.setting)
-            )
+            self.judge_agent = await loop.run_in_executor(None, lambda: JudgeAgent(setting=self.setting))
 
             # 初始化完成提示
             self.chat_log.add_system_message(
@@ -193,7 +186,7 @@ class DeepPulseTUI(App):
                             self.data_panel.update_data("当前价", str(result["price"]))
                         if "change_pct" in result:
                             self.data_panel.update_data("涨跌幅", str(result["change_pct"]))
-                    except:
+                    except Exception:
                         pass
 
                 elif event_type == "done":
@@ -248,9 +241,7 @@ class DeepPulseTUI(App):
 
     def show_confirmation_dialog(self):
         """显示用户确认对话框（简化版：只有认可/不认可）"""
-        self.chat_log.add_confirmation_buttons(
-            [("✅ 认可", "accept"), ("❌ 不认可", "reject")]
-        )
+        self.chat_log.add_confirmation_buttons([("✅ 认可", "accept"), ("❌ 不认可", "reject")])
 
     async def on_button_pressed(self, event) -> None:
         """处理按钮点击"""
@@ -272,18 +263,15 @@ class DeepPulseTUI(App):
             self.chat_input.focus()
             return
 
-        # 提取评判内容的关键信息
-        judge_content = self.judge_result['content'][:300]
-
         try:
             from agent.tools import TOOL_DISPATCH
 
-            result = TOOL_DISPATCH["record_learning"](
+            TOOL_DISPATCH["record_learning"](
                 learned_what=f"用户认可评判Agent对「{self.current_query[:50]}...」的检查意见",
                 learned_why="评判Agent发现了主分析中的潜在问题或改进点",
                 apply_when="在进行类似分析时参考这些检查点",
                 category="user_correction",
-                importance=0.7
+                importance=0.7,
             )
             self.chat_log.add_system_message("✅ 已记录评判内容到学习记忆")
         except Exception as e:
@@ -310,7 +298,7 @@ class DeepPulseTUI(App):
             args_str = text[idx + 1 : -1]
             tool_args = json.loads(args_str) if args_str else {}
             return tool_name, tool_args
-        except:
+        except Exception:
             return text, {}
 
     async def action_reset(self) -> None:

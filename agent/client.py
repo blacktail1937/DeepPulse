@@ -1,6 +1,5 @@
 """统一 LLM 客户端 - 支持 OpenAI 和 Anthropic 两种协议，支持流式输出和异步"""
 
-import asyncio
 import json
 import os
 from dataclasses import dataclass, field
@@ -22,8 +21,8 @@ def load_setting() -> dict:
         if not inner:
             raise ValueError(
                 "API Key 未配置。请编辑 setting.json:\n"
-                "  1. 直接填入 API Key: \"api_key\": \"sk-your-key\"\n"
-                "  2. 或引用环境变量: \"api_key\": \"${YOUR_ENV_VAR}\""
+                '  1. 直接填入 API Key: "api_key": "sk-your-key"\n'
+                '  2. 或引用环境变量: "api_key": "${YOUR_ENV_VAR}"'
             )
         # 先尝试作为环境变量名查找
         env_val = os.environ.get(inner)
@@ -36,7 +35,7 @@ def load_setting() -> dict:
             raise ValueError(
                 f"环境变量 {inner} 未设置。请:\n"
                 f"  1. 设置环境变量: set {inner}=your-key (Windows) 或 export {inner}=your-key (Linux/Mac)\n"
-                f"  2. 或直接在 setting.json 中填入 API Key: \"api_key\": \"sk-your-key\""
+                f'  2. 或直接在 setting.json 中填入 API Key: "api_key": "sk-your-key"'
             )
 
     return setting

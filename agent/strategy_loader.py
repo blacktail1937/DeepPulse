@@ -293,7 +293,7 @@ class StrategyLoader:
                 "summary": summary,
                 "max_chars": max_chars,
                 "generated_at": time.time(),
-                "strategy_count": len(self.strategies)
+                "strategy_count": len(self.strategies),
             }
             with open(CACHE_FILE, "w", encoding="utf-8") as f:
                 json.dump(cache_data, f, ensure_ascii=False, indent=2)

@@ -1,16 +1,15 @@
 #!/usr/bin/env python3
-# -*- coding: utf-8 -*-
 """配置助手 - 帮助用户设置API Key"""
 
+import io
 import json
 import sys
-import io
 from pathlib import Path
 
 # 设置stdout为UTF-8编码
-if sys.platform == 'win32':
-    sys.stdout = io.TextIOWrapper(sys.stdout.buffer, encoding='utf-8')
-    sys.stderr = io.TextIOWrapper(sys.stderr.buffer, encoding='utf-8')
+if sys.platform == "win32":
+    sys.stdout = io.TextIOWrapper(sys.stdout.buffer, encoding="utf-8")
+    sys.stderr = io.TextIOWrapper(sys.stderr.buffer, encoding="utf-8")
 
 
 def main():
@@ -27,6 +26,7 @@ def main():
         example_path = Path("setting.example.json")
         if example_path.exists():
             import shutil
+
             shutil.copy(example_path, setting_path)
             print("✅ 已创建 setting.json")
         else:
@@ -34,7 +34,7 @@ def main():
             return 1
 
     # 读取配置
-    with open(setting_path, encoding='utf-8') as f:
+    with open(setting_path, encoding="utf-8") as f:
         setting = json.load(f)
 
     print("\n📋 当前配置:")
@@ -44,7 +44,7 @@ def main():
     print(f"  API Key: {setting['llm']['api_key']}")
 
     # 检查API Key
-    api_key = setting['llm']['api_key']
+    api_key = setting["llm"]["api_key"]
 
     if api_key == "${}":
         print("\n⚠️ API Key 未配置")
@@ -64,10 +64,10 @@ def main():
                 return 1
 
             # 更新配置
-            setting['llm']['api_key'] = new_key
+            setting["llm"]["api_key"] = new_key
 
             # 保存
-            with open(setting_path, 'w', encoding='utf-8') as f:
+            with open(setting_path, "w", encoding="utf-8") as f:
                 json.dump(setting, f, indent=2, ensure_ascii=False)
 
             print("\n✅ API Key 已保存到 setting.json")
@@ -84,15 +84,15 @@ def main():
                 return 1
 
             # 更新配置
-            setting['llm']['api_key'] = f"${{{env_name}}}"
+            setting["llm"]["api_key"] = f"${{{env_name}}}"
 
             # 保存
-            with open(setting_path, 'w', encoding='utf-8') as f:
+            with open(setting_path, "w", encoding="utf-8") as f:
                 json.dump(setting, f, indent=2, ensure_ascii=False)
 
             print(f"\n✅ 已配置使用环境变量: {env_name}")
-            print(f"\n⚠️ 请在启动前设置环境变量:")
-            if sys.platform == 'win32':
+            print("\n⚠️ 请在启动前设置环境变量:")
+            if sys.platform == "win32":
                 print(f"  Windows: set {env_name}=your-api-key")
             else:
                 print(f"  Linux/Mac: export {env_name}=your-api-key")
@@ -108,6 +108,7 @@ def main():
         print("\n🔍 验证配置...")
         try:
             from agent.client import load_setting
+
             load_setting()
             print("✅ 配置验证通过")
             print("\n🎉 现在可以启动 DeepPulse:")

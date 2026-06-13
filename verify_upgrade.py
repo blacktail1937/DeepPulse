@@ -1,15 +1,14 @@
 #!/usr/bin/env python3
-# -*- coding: utf-8 -*-
 """升级验证脚本 - 检查TUI和评判Agent是否正确安装"""
 
-import sys
 import io
+import sys
 from pathlib import Path
 
 # 设置stdout为UTF-8编码
-if sys.platform == 'win32':
-    sys.stdout = io.TextIOWrapper(sys.stdout.buffer, encoding='utf-8')
-    sys.stderr = io.TextIOWrapper(sys.stderr.buffer, encoding='utf-8')
+if sys.platform == "win32":
+    sys.stdout = io.TextIOWrapper(sys.stdout.buffer, encoding="utf-8")
+    sys.stderr = io.TextIOWrapper(sys.stderr.buffer, encoding="utf-8")
 
 # 添加项目根目录到路径
 sys.path.insert(0, str(Path(__file__).parent))
@@ -24,16 +23,18 @@ def check_dependencies():
     # 检查textual
     try:
         import textual
+
         print(f"  ✅ textual {textual.__version__}")
     except ImportError:
         print("  ❌ textual 未安装")
         missing.append("textual>=0.47.0")
 
     # 检查asyncio（Python内置）
-    try:
-        import asyncio
+    from importlib.util import find_spec
+
+    if find_spec("asyncio"):
         print("  ✅ asyncio (内置)")
-    except ImportError:
+    else:
         print("  ❌ asyncio 不可用")
         missing.append("asyncio")
 
@@ -131,7 +132,7 @@ def check_async_support():
         from agent.client import LLMClient
 
         # 检查是否有chat_stream_async方法
-        if hasattr(LLMClient, 'chat_stream_async'):
+        if hasattr(LLMClient, "chat_stream_async"):
             print("  ✅ LLMClient.chat_stream_async")
         else:
             print("  ❌ LLMClient.chat_stream_async 不存在")
@@ -140,7 +141,7 @@ def check_async_support():
         from agent.agent import StockAgent
 
         # 检查是否有chat_stream_async方法
-        if hasattr(StockAgent, 'chat_stream_async'):
+        if hasattr(StockAgent, "chat_stream_async"):
             print("  ✅ StockAgent.chat_stream_async")
         else:
             print("  ❌ StockAgent.chat_stream_async 不存在")
@@ -168,10 +169,11 @@ def check_setting():
 
         try:
             import json
-            with open(setting_path, encoding='utf-8') as f:
+
+            with open(setting_path, encoding="utf-8") as f:
                 setting = json.load(f)
 
-            if 'llm' in setting and 'api_key' in setting['llm']:
+            if "llm" in setting and "api_key" in setting["llm"]:
                 print("  ✅ LLM配置完整")
                 return True
             else:
