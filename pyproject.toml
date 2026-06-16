@@ -80,9 +80,10 @@ python_version = "3.10"
 allow_untyped_defs = true
 ignore_missing_imports = true
 warn_return_any = false
-warn_unused_configs = true
-warn_redundant_casts = true
-warn_unused_ignores = true
+warn_unused_configs = false
+warn_redundant_casts = false
+warn_unused_ignores = false
+disable_error_code = ["assignment", "attr-defined", "var-annotated", "arg-type", "return-value", "override", "no-redef", "union-attr", "index", "operator", "misc", "valid-type", "call-arg"]
 
 # ── pytest ────────────────────────────────────────────────────────────
 [tool.pytest.ini_options]

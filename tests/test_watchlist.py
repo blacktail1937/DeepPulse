@@ -3,14 +3,24 @@
 from pathlib import Path
 
 
+def _make_watchlist(tmp_db_path):
+    """创建已初始化表结构的 WatchlistManager"""
+    from agent.watchlist import WatchlistManager
+    from src.database import get_connection, init_tables
+
+    # 先初始化表结构
+    conn = get_connection(Path(tmp_db_path))
+    init_tables(conn)
+    conn.close()
+    return WatchlistManager(db_path=Path(tmp_db_path))
+
+
 class TestWatchlistManager:
     """测试自选股管理核心功能"""
 
     def test_add_stock(self, tmp_db_path):
         """添加自选股应返回成功"""
-        from agent.watchlist import WatchlistManager
-
-        wl = WatchlistManager(db_path=Path(tmp_db_path))
+        wl = _make_watchlist(tmp_db_path)
         result = wl.add("600519", group="默认", notes="贵州茅台")
         assert isinstance(result, dict)
         assert result.get("status") == "added" or "code" in result
@@ -19,7 +29,7 @@ class TestWatchlistManager:
         """移除自选股应返回成功"""
         from agent.watchlist import WatchlistManager
 
-        wl = WatchlistManager(db_path=Path(tmp_db_path))
+        wl = _make_watchlist(tmp_db_path)
         wl.add("600519", group="默认")
         result = wl.remove("600519", "默认")
         assert isinstance(result, dict)
@@ -28,7 +38,7 @@ class TestWatchlistManager:
         """空自选股列表应返回空"""
         from agent.watchlist import WatchlistManager
 
-        wl = WatchlistManager(db_path=Path(tmp_db_path))
+        wl = _make_watchlist(tmp_db_path)
         codes = wl.get_codes("默认")
         assert isinstance(codes, list)
         assert len(codes) == 0
@@ -37,7 +47,7 @@ class TestWatchlistManager:
         """添加后应能列出"""
         from agent.watchlist import WatchlistManager
 
-        wl = WatchlistManager(db_path=Path(tmp_db_path))
+        wl = _make_watchlist(tmp_db_path)
         wl.add("600519", group="默认")
         wl.add("000001", group="默认")
         codes = wl.get_codes("默认")
@@ -48,7 +58,7 @@ class TestWatchlistManager:
         """重复添加不应崩溃"""
         from agent.watchlist import WatchlistManager
 
-        wl = WatchlistManager(db_path=Path(tmp_db_path))
+        wl = _make_watchlist(tmp_db_path)
         wl.add("600519", group="默认")
         result = wl.add("600519", group="默认")
         assert isinstance(result, dict)
@@ -57,7 +67,7 @@ class TestWatchlistManager:
         """设置告警规则应返回成功"""
         from agent.watchlist import WatchlistManager
 
-        wl = WatchlistManager(db_path=Path(tmp_db_path))
+        wl = _make_watchlist(tmp_db_path)
         wl.add("600519", group="默认")
         result = wl.add_alert_rule("600519", "price_above", {"threshold": 2000.0})
         assert isinstance(result, dict)
@@ -66,7 +76,7 @@ class TestWatchlistManager:
         """不同分组应独立管理"""
         from agent.watchlist import WatchlistManager
 
-        wl = WatchlistManager(db_path=Path(tmp_db_path))
+        wl = _make_watchlist(tmp_db_path)
         wl.add("600519", group="白酒")
         wl.add("000001", group="银行")
         baijiu = wl.get_codes("白酒")
