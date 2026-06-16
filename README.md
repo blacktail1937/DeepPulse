@@ -327,10 +327,9 @@ DeepPulse 提供两种界面模式：
 python -m agent.tui_cli
 ```
 
-**TUI 界面预览**：
-```
+**TUI 界面预览**
 <img width="2559" height="1527" alt="image" src="https://github.com/user-attachments/assets/a46b9236-a167-4aa9-97c5-3f3e2e6f4f7e" />
-```
+
 
 **TUI 模式特点**：
 - 🎨 **暗色金融主题** — GitHub Dark 风格，涨红跌绿专业配色
