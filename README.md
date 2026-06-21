@@ -753,3 +753,7 @@ DeepPulse/
 
 <img width="642" height="1141.5" alt="00d3453e3477fb8321001bf33e00be67" src="https://github.com/user-attachments/assets/b26a797b-375d-4d79-b6c0-5ea3903dde6a" />
 
+
+#### Discord
+服务器邀请链接 https://discord.gg/sMdHTe5N
+
